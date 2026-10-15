@@ -1,9 +1,34 @@
 // EduPredict AI - Student Performance ML Frontend Application
+// Supports Dual Mode: Cloud Python API + In-Browser Random Forest Client Engine (for Netlify/Vercel/Offline)
+
 let radarChartInstance = null;
 let whatIfChartInstance = null;
 let importanceChartInstance = null;
 let currentBatchData = [];
-let modelPresets = [];
+let modelPresets = [
+  {
+    name: '🌟 High Achiever',
+    description: 'Top 5% student with consistent high study hours & internal scores',
+    values: { attendance: 95.0, study_hours: 7.2, assignment_score: 94.0, internal_marks: 92.0, previous_marks: 90.0 }
+  },
+  {
+    name: '⚖️ Average Student',
+    description: 'Typical undergraduate student performing in middle 50th percentile',
+    values: { attendance: 80.0, study_hours: 4.5, assignment_score: 72.0, internal_marks: 68.0, previous_marks: 70.0 }
+  },
+  {
+    name: '⚠️ At-Risk Student',
+    description: 'Low attendance and internal marks indicating potential course failure',
+    values: { attendance: 62.0, study_hours: 1.8, assignment_score: 45.0, internal_marks: 42.0, previous_marks: 48.0 }
+  },
+  {
+    name: '🚀 Hard Worker Improver',
+    description: 'High study hours and attendance working to recover from lower past grades',
+    values: { attendance: 90.0, study_hours: 7.5, assignment_score: 78.0, internal_marks: 65.0, previous_marks: 52.0 }
+  }
+];
+
+let localModelData = null;
 let debounceTimer = null;
 
 const FEATURES = ['attendance', 'study_hours', 'assignment_score', 'internal_marks', 'previous_marks'];
@@ -15,7 +40,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   setupInputSync();
+  renderPresets(modelPresets);
+
+  // Attempt to load client-side Random Forest model (for Netlify / static deployment)
+  await initClientModel();
+
+  // Also check backend API info
   await loadModelInfo();
+
   setupEventListeners();
 
   // Run initial prediction
@@ -56,24 +88,43 @@ function onInputChange() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       triggerPrediction();
-    }, 150);
+    }, 120);
   }
 }
 
-// Fetch Model Info and Presets from Backend API
+// Load Client-side Random Forest Model (Netlify compatibility)
+async function initClientModel() {
+  try {
+    const res = await fetch('./static/model.json');
+    if (res.ok) {
+      localModelData = await res.json();
+      console.log('✅ Client-side Random Forest model loaded:', localModelData.n_estimators, 'trees');
+      if (localModelData.feature_importances) {
+        renderFeatureImportanceChart(localModelData.feature_importances);
+      }
+    }
+  } catch (err) {
+    console.warn('Client-side model.json not loaded yet:', err);
+  }
+}
+
+// Fetch Backend Model Info if available
 async function loadModelInfo() {
   try {
     const res = await fetch('/api/model-info');
-    const data = await res.json();
-    if (data.presets) {
-      modelPresets = data.presets;
-      renderPresets(data.presets);
-    }
-    if (data.feature_importances) {
-      renderFeatureImportanceChart(data.feature_importances);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.presets && data.presets.length > 0) {
+        modelPresets = data.presets;
+        renderPresets(data.presets);
+      }
+      if (data.feature_importances) {
+        renderFeatureImportanceChart(data.feature_importances);
+      }
     }
   } catch (err) {
-    console.error('Failed to load model info:', err);
+    // Expected on static hosting like Netlify
+    console.log('Running on static host (Netlify), using client-side Random Forest engine.');
   }
 }
 
@@ -149,14 +200,227 @@ function getCurrentInputs() {
   return inputs;
 }
 
-// Execute Individual ML Prediction
+// In-Browser Random Forest Regressor Evaluator (100 Decision Trees)
+function predictLocalRandomForest(inputs) {
+  if (!localModelData) return null;
+
+  const featureVector = [
+    parseFloat(inputs.attendance),
+    parseFloat(inputs.study_hours),
+    parseFloat(inputs.assignment_score),
+    parseFloat(inputs.internal_marks),
+    parseFloat(inputs.previous_marks)
+  ];
+
+  const treePredictions = [];
+  for (let i = 0; i < localModelData.trees.length; i++) {
+    const t = localModelData.trees[i];
+    let node = 0;
+    while (t.feature[node] !== -2) {
+      const featIdx = t.feature[node];
+      if (featureVector[featIdx] <= t.threshold[node]) {
+        node = t.children_left[node];
+      } else {
+        node = t.children_right[node];
+      }
+    }
+    treePredictions.push(t.value[node]);
+  }
+
+  // Mean prediction
+  const sum = treePredictions.reduce((a, b) => a + b, 0);
+  const rawScore = sum / treePredictions.length;
+  const score = Math.max(0, Math.min(100, rawScore));
+
+  // Uncertainty std dev across 100 trees
+  const variance = treePredictions.reduce((acc, v) => acc + Math.pow(v - rawScore, 2), 0) / treePredictions.length;
+  const stdDev = Math.sqrt(variance);
+  const ciLower = Math.max(0, score - 1.96 * stdDev);
+  const ciUpper = Math.min(100, score + 1.96 * stdDev);
+
+  // Marginal impacts (+10 points / +1.5 hrs)
+  const marginal_impacts = {};
+  FEATURES.forEach(feat => {
+    const modInputs = { ...inputs };
+    if (feat === 'study_hours') {
+      modInputs[feat] = Math.min(16, parseFloat(modInputs[feat]) + 1.5);
+    } else {
+      modInputs[feat] = Math.min(100, parseFloat(modInputs[feat]) + 10);
+    }
+    const modVec = [
+      modInputs.attendance,
+      modInputs.study_hours,
+      modInputs.assignment_score,
+      modInputs.internal_marks,
+      modInputs.previous_marks
+    ];
+
+    let mSum = 0;
+    for (let i = 0; i < localModelData.trees.length; i++) {
+      const t = localModelData.trees[i];
+      let node = 0;
+      while (t.feature[node] !== -2) {
+        const featIdx = t.feature[node];
+        if (modVec[featIdx] <= t.threshold[node]) {
+          node = t.children_left[node];
+        } else {
+          node = t.children_right[node];
+        }
+      }
+      mSum += t.value[node];
+    }
+    const mPred = mSum / localModelData.trees.length;
+    marginal_impacts[feat] = Math.max(0, parseFloat((mPred - score).toFixed(2)));
+  });
+
+  // Grade & Performance Category
+  let grade = 'F';
+  let category = 'Critical Risk (Academic Warning)';
+  let gpa = 0.0;
+  let badge_color = 'danger';
+  let feedback = 'High risk of course failure. Immediate academic mentoring and intervention required.';
+
+  if (score >= 90) {
+    grade = 'A+';
+    category = 'High Performance (Distinction)';
+    gpa = 4.0;
+    badge_color = 'success';
+    feedback = 'Outstanding academic mastery with exceptional consistency across all metrics.';
+  } else if (score >= 80) {
+    grade = 'A';
+    category = 'High Performance (Distinction)';
+    gpa = 3.7;
+    badge_color = 'success';
+    feedback = 'Strong comprehension and performance; on track for honors.';
+  } else if (score >= 70) {
+    grade = 'B';
+    category = 'Good Performance (Above Average)';
+    gpa = 3.0;
+    badge_color = 'info';
+    feedback = 'Good overall standing with steady performance across core assessments.';
+  } else if (score >= 60) {
+    grade = 'C';
+    category = 'Average Performance (Moderate)';
+    gpa = 2.2;
+    badge_color = 'warning';
+    feedback = 'Passing performance; targeted improvement in weaker areas will secure better grades.';
+  } else if (score >= 50) {
+    grade = 'D';
+    category = 'Low Performance (Needs Improvement)';
+    gpa = 1.5;
+    badge_color = 'warning';
+    feedback = 'Borderline standing with noticeable vulnerabilities in key evaluated subjects.';
+  }
+
+  const recommendations = generateLocalRecommendations(inputs, score);
+
+  return {
+    success: true,
+    prediction: {
+      score: parseFloat(score.toFixed(2)),
+      predicted_marks: parseFloat(score.toFixed(2)),
+      category: category,
+      performance_category: category,
+      grade: grade,
+      status: category,
+      gpa: gpa,
+      badge_color: badge_color,
+      feedback: feedback,
+      uncertainty_std: parseFloat(stdDev.toFixed(2)),
+      confidence_interval_95: [parseFloat(ciLower.toFixed(2)), parseFloat(ciUpper.toFixed(2))],
+      tree_min: parseFloat(Math.min(...treePredictions).toFixed(2)),
+      tree_max: parseFloat(Math.max(...treePredictions).toFixed(2))
+    },
+    inputs: inputs,
+    marginal_impacts: marginal_impacts,
+    feature_importances: localModelData.feature_importances,
+    recommendations: recommendations
+  };
+}
+
+// Generate Actionable Academic Recommendations
+function generateLocalRecommendations(inputs, score) {
+  const recs = [];
+  const att = parseFloat(inputs.attendance || 0);
+  const study = parseFloat(inputs.study_hours || 0);
+  const assign = parseFloat(inputs.assignment_score || 0);
+  const internal = parseFloat(inputs.internal_marks || 0);
+  const prev = parseFloat(inputs.previous_marks || 0);
+
+  if (internal < 70) {
+    recs.append?.({} ) || recs.push({
+      priority: internal < 55 ? 'Critical' : 'High',
+      category: 'Internal Assessments',
+      title: 'Boost Internal Marks (44.9% Model Weight)',
+      description: `Internal marks carry the highest weight in the model. Improving from ${internal.toFixed(1)} to 80+ can raise your final score by 6–12 marks.`,
+      action: 'Prioritize mid-term preparation, lab evaluations, and continuous unit quizzes.'
+    });
+  } else if (internal >= 85) {
+    recs.push({
+      priority: 'Positive',
+      category: 'Internal Assessments',
+      title: 'Outstanding Internal Standing',
+      description: `Your internal marks (${internal.toFixed(1)}) strongly anchor your high performance prediction.`,
+      action: 'Maintain your current study rhythm leading into final exams.'
+    });
+  }
+
+  if (assign < 70) {
+    recs.push({
+      priority: 'High',
+      category: 'Assignments & Coursework',
+      title: 'Maximize Assignment Submissions',
+      description: `Assignments constitute 28.7% of the model importance. Current score is ${assign.toFixed(1)}.`,
+      action: 'Submit all problem sets on time, seek TA feedback before deadlines, and review rubrics carefully.'
+    });
+  }
+
+  if (study < 3.5) {
+    recs.push({
+      priority: 'Medium',
+      category: 'Study Habits',
+      title: 'Increase Daily Study Dedication',
+      description: `Current study duration is ${study.toFixed(1)} hrs/day. Average high performers average 5.5 to 7.0 hrs/day.`,
+      action: 'Add 1.5 to 2 structured hours using Pomodoro intervals (50m study / 10m break).'
+    });
+  } else if (study >= 7) {
+    recs.push({
+      priority: 'Positive',
+      category: 'Study Habits',
+      title: 'Commendable Study Discipline',
+      description: `${study.toFixed(1)} hours/day provides deep retention. Ensure quality rest and spaced repetition.`,
+      action: 'Balance intense study sessions with adequate sleep and revision.'
+    });
+  }
+
+  if (att < 75) {
+    recs.push({
+      priority: 'Urgent',
+      category: 'Attendance Warning',
+      title: 'Attendance Below Mandatory 75%',
+      description: `Current attendance is ${att.toFixed(1)}%. Falling below 75% incurs institutional penalties and risk of exam debarment.`,
+      action: 'Ensure 100% presence in remaining sessions to bring aggregate attendance above 75% immediately.'
+    });
+  } else {
+    recs.push({
+      priority: 'Low',
+      category: 'Attendance',
+      title: 'Healthy Attendance Record',
+      description: `Attendance at ${att.toFixed(1)}% satisfies all institutional compliance requirements.`,
+      action: 'Continue regular lecture engagement and active classroom participation.'
+    });
+  }
+
+  return recs;
+}
+
+// Execute ML Prediction (Dual Mode)
 async function triggerPrediction() {
   const inputs = getCurrentInputs();
   const btn = document.getElementById('predictBtn');
-  if (btn) {
-    btn.classList.add('opacity-80');
-  }
+  if (btn) btn.classList.add('opacity-80');
 
+  // Try backend API first (when running Flask locally or on Render)
   try {
     const res = await fetch('/api/predict', {
       method: 'POST',
@@ -164,19 +428,25 @@ async function triggerPrediction() {
       body: JSON.stringify(inputs)
     });
 
-    const data = await res.json();
-    if (data.success) {
-      updatePredictionDashboard(data);
-    } else {
-      console.error('Prediction failed:', data.error);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        updatePredictionDashboard(data);
+        if (btn) btn.classList.remove('opacity-80');
+        return;
+      }
     }
   } catch (err) {
-    console.error('API Error:', err);
-  } finally {
-    if (btn) {
-      btn.classList.remove('opacity-80');
-    }
+    // API failed or running on static host like Netlify
   }
+
+  // Fallback to client-side Random Forest evaluator
+  const localRes = predictLocalRandomForest(inputs);
+  if (localRes) {
+    updatePredictionDashboard(localRes);
+  }
+
+  if (btn) btn.classList.remove('opacity-80');
 }
 
 // Update the Result Dashboard
@@ -208,12 +478,11 @@ function updatePredictionDashboard(data) {
     const offset = circumference - (score / 100) * circumference;
     circle.style.strokeDashoffset = offset;
 
-    // Color coordination based on grade
-    let strokeColor = '#6366f1'; // indigo
-    if (score >= 80) strokeColor = '#10b981'; // emerald
-    else if (score >= 65) strokeColor = '#6366f1'; // indigo
-    else if (score >= 50) strokeColor = '#f59e0b'; // amber
-    else strokeColor = '#ef4444'; // rose
+    let strokeColor = '#6366f1';
+    if (score >= 80) strokeColor = '#10b981';
+    else if (score >= 65) strokeColor = '#6366f1';
+    else if (score >= 50) strokeColor = '#f59e0b';
+    else strokeColor = '#ef4444';
 
     circle.setAttribute('stroke', strokeColor);
   }
@@ -266,12 +535,11 @@ function updatePredictionDashboard(data) {
   }
 }
 
-// Radar Chart (Student vs High-Performer Benchmark)
+// Radar Chart
 function updateRadarChart(inputs) {
   const ctx = document.getElementById('studentRadarChart');
   if (!ctx) return;
 
-  // Normalized values (0 to 100)
   const studentData = [
     inputs.attendance,
     Math.min(100, (inputs.study_hours / 10) * 100),
@@ -317,20 +585,13 @@ function updateRadarChart(inputs) {
             ticks: { display: false, stepSize: 25 },
             grid: { color: 'rgba(255, 255, 255, 0.08)' },
             angleLines: { color: 'rgba(255, 255, 255, 0.08)' },
-            pointLabels: {
-              color: '#94a3b8',
-              font: { size: 10, family: 'Plus Jakarta Sans' }
-            }
+            pointLabels: { color: '#94a3b8', font: { size: 10, family: 'Plus Jakarta Sans' } }
           }
         },
         plugins: {
           legend: {
             position: 'bottom',
-            labels: {
-              color: '#cbd5e1',
-              font: { size: 10, family: 'Plus Jakarta Sans' },
-              boxWidth: 12
-            }
+            labels: { color: '#cbd5e1', font: { size: 10, family: 'Plus Jakarta Sans' }, boxWidth: 12 }
           }
         }
       }
@@ -355,7 +616,6 @@ function updateMarginalGains(impacts) {
   };
 
   container.innerHTML = '';
-  // Sort descending by gain
   const sorted = Object.entries(impacts).sort((a, b) => b[1] - a[1]);
 
   sorted.forEach(([feat, gain]) => {
@@ -374,13 +634,12 @@ function updateMarginalGains(impacts) {
   });
 }
 
-// AI Recommendations List
+// Recommendations List
 function updateRecommendations(recs) {
   const container = document.getElementById('recommendationsList');
   if (!container || !recs) return;
 
   container.innerHTML = '';
-
   if (recs.length === 0) {
     container.innerHTML = `<div class="p-4 rounded-xl bg-slate-900/40 text-xs text-slate-400">All student parameters are optimal. Maintain current routines.</div>`;
     return;
@@ -422,11 +681,10 @@ function updateRecommendations(recs) {
   });
 }
 
-// What-If Simulator Execution
+// What-If Simulator Execution (Dual Mode)
 async function runWhatIf(featureName) {
   const inputs = getCurrentInputs();
-  
-  // Highlight active whatif button
+
   document.querySelectorAll('.whatif-tab').forEach(b => {
     if (b.getAttribute('onclick') && b.getAttribute('onclick').includes(featureName)) {
       b.className = 'whatif-tab px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold transition-all shadow-lg shadow-indigo-600/20';
@@ -435,24 +693,49 @@ async function runWhatIf(featureName) {
     }
   });
 
+  // Try backend API first
   try {
     const res = await fetch('/api/what-if', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        base_inputs: inputs,
-        feature: featureName,
-        steps: 20
-      })
+      body: JSON.stringify({ base_inputs: inputs, feature: featureName, steps: 20 })
     });
-
-    const data = await res.json();
-    if (data.success) {
-      renderWhatIfChart(data);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        renderWhatIfChart(data);
+        return;
+      }
     }
-  } catch (err) {
-    console.error('What-If error:', err);
+  } catch (err) {}
+
+  // Fallback to client-side sensitivity calculation
+  if (!localModelData) return;
+  const ranges = {
+    'study_hours': { min: 0.5, max: 14.0, label: 'Daily Study Hours' },
+    'internal_marks': { min: 30.0, max: 100.0, label: 'Internal Marks' },
+    'assignment_score': { min: 30.0, max: 100.0, label: 'Assignment Score' },
+    'attendance': { min: 50.0, max: 100.0, label: 'Attendance Rate' },
+    'previous_marks': { min: 30.0, max: 100.0, label: 'Previous Exam Marks' }
+  };
+
+  const r = ranges[featureName] || { min: 0, max: 100, label: featureName };
+  const curve = [];
+  const steps = 18;
+  for (let i = 0; i <= steps; i++) {
+    const v = r.min + (i / steps) * (r.max - r.min);
+    const modInputs = { ...inputs, [featureName]: v };
+    const p = predictLocalRandomForest(modInputs);
+    if (p) {
+      curve.push({ value: parseFloat(v.toFixed(1)), predicted_score: p.prediction.score });
+    }
   }
+
+  renderWhatIfChart({
+    feature: featureName,
+    feature_label: r.label,
+    curve: curve
+  });
 }
 
 function renderWhatIfChart(data) {
@@ -495,13 +778,9 @@ function renderWhatIfChart(data) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            labels: { color: '#cbd5e1', font: { family: 'Plus Jakarta Sans', size: 11 } }
-          },
+          legend: { labels: { color: '#cbd5e1', font: { family: 'Plus Jakarta Sans', size: 11 } } },
           tooltip: {
-            callbacks: {
-              label: (ctx) => `Score: ${ctx.parsed.y.toFixed(2)}`
-            }
+            callbacks: { label: (ctx) => `Score: ${ctx.parsed.y.toFixed(2)}` }
           }
         },
         scales: {
@@ -528,7 +807,7 @@ function renderWhatIfChart(data) {
   }
 }
 
-// Feature Importance Chart (scikit-learn Gini / Impurity values)
+// Feature Importance Chart
 function renderFeatureImportanceChart(importances) {
   const ctx = document.getElementById('featureImportanceChart');
   if (!ctx) return;
@@ -541,10 +820,13 @@ function renderFeatureImportanceChart(importances) {
     'attendance': 'Attendance Rate'
   };
 
-  // Sort descending
   const sorted = Object.entries(importances).sort((a, b) => b[1] - a[1]);
   const labels = sorted.map(([k]) => labelsMap[k] || k);
   const data = sorted.map(([, v]) => (v * 100).toFixed(1));
+
+  if (importanceChartInstance) {
+    importanceChartInstance.destroy();
+  }
 
   importanceChartInstance = new Chart(ctx, {
     type: 'bar',
@@ -553,13 +835,7 @@ function renderFeatureImportanceChart(importances) {
       datasets: [{
         label: 'Feature Weight Percentage (%)',
         data: data,
-        backgroundColor: [
-          '#6366f1',
-          '#8b5cf6',
-          '#10b981',
-          '#06b6d4',
-          '#f59e0b'
-        ],
+        backgroundColor: ['#6366f1', '#8b5cf6', '#10b981', '#06b6d4', '#f59e0b'],
         borderRadius: 8
       }]
     },
@@ -570,20 +846,14 @@ function renderFeatureImportanceChart(importances) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          callbacks: {
-            label: (ctx) => `Weight: ${ctx.parsed.x}% of Model Decision`
-          }
+          callbacks: { label: (ctx) => `Weight: ${ctx.parsed.x}% of Model Decision` }
         }
       },
       scales: {
         x: {
           max: 60,
           grid: { color: 'rgba(255, 255, 255, 0.05)' },
-          ticks: {
-            color: '#94a3b8',
-            callback: (v) => `${v}%`,
-            font: { family: 'Plus Jakarta Sans', size: 10 }
-          }
+          ticks: { color: '#94a3b8', callback: (v) => `${v}%`, font: { family: 'Plus Jakarta Sans', size: 10 } }
         },
         y: {
           grid: { display: false },
@@ -628,7 +898,7 @@ function setupEventListeners() {
     });
   }
 
-  // Batch / CSV Upload Listeners
+  // Batch CSV Upload Listeners
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('csvFileInput');
 
@@ -663,7 +933,7 @@ function setupEventListeners() {
   if (loadSampleBatchBtn) {
     loadSampleBatchBtn.addEventListener('click', async () => {
       try {
-        const res = await fetch('/static/sample_students.csv');
+        const res = await fetch('./static/sample_students.csv');
         const text = await res.text();
         const blob = new Blob([text], { type: 'text/csv' });
         const file = new File([blob], 'sample_students.csv', { type: 'text/csv' });
@@ -694,28 +964,107 @@ function setupEventListeners() {
   }
 }
 
-// Upload and Process CSV
+// Upload and Process CSV (Dual Mode)
 async function handleCsvFile(file) {
+  // First try backend API
   const formData = new FormData();
   formData.append('file', file);
 
   try {
-    const res = await fetch('/api/batch-predict', {
-      method: 'POST',
-      body: formData
-    });
-
-    const data = await res.json();
-    if (data.success) {
-      currentBatchData = data.students;
-      displayBatchResults(data);
-    } else {
-      alert(`Batch processing error: ${data.error}`);
+    const res = await fetch('/api/batch-predict', { method: 'POST', body: formData });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        currentBatchData = data.students;
+        displayBatchResults(data);
+        return;
+      }
     }
-  } catch (err) {
-    console.error('Batch upload error:', err);
-    alert('Failed to process CSV file.');
-  }
+  } catch (err) {}
+
+  // Fallback: Parse CSV in browser using client-side Random Forest
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length <= 1) {
+      alert('CSV file is empty or missing headers.');
+      return;
+    }
+
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const students = [];
+    const scores = [];
+    let atRisk = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(',').map(p => p.trim());
+      if (parts.length < 5) continue;
+
+      const row = {};
+      headers.forEach((h, idx) => {
+        row[h] = parts[idx];
+      });
+
+      const inputs = {
+        attendance: parseFloat(row.attendance || 75),
+        study_hours: parseFloat(row.study_hours || 4),
+        assignment_score: parseFloat(row.assignment_score || 70),
+        internal_marks: parseFloat(row.internal_marks || 65),
+        previous_marks: parseFloat(row.previous_marks || 65)
+      };
+
+      const localResult = predictLocalRandomForest(inputs);
+      if (localResult) {
+        const score = localResult.prediction.score;
+        scores.push(score);
+        if (score < 60) atRisk++;
+
+        students.push({
+          student_id: row.student_id || `STU-${1000 + i}`,
+          name: row.name || `Student ${i}`,
+          attendance: inputs.attendance,
+          study_hours: inputs.study_hours,
+          assignment_score: inputs.assignment_score,
+          internal_marks: inputs.internal_marks,
+          previous_marks: inputs.previous_marks,
+          predicted_score: score,
+          grade: localResult.prediction.grade,
+          status: localResult.prediction.status,
+          gpa: localResult.prediction.gpa,
+          badge_color: localResult.prediction.badge_color
+        });
+      }
+    }
+
+    if (students.length === 0) {
+      alert('Could not parse any valid student records from the CSV.');
+      return;
+    }
+
+    const sum = scores.reduce((a, b) => a + b, 0);
+    const avg = sum / scores.length;
+    const max = Math.max(...scores);
+    const min = Math.min(...scores);
+    const passCount = scores.filter(s => s >= 50).length;
+
+    const batchData = {
+      success: true,
+      summary: {
+        total_students: students.length,
+        average_score: avg,
+        highest_score: max,
+        lowest_score: min,
+        pass_rate: parseFloat(((passCount / students.length) * 100).toFixed(1)),
+        at_risk_count: atRisk
+      },
+      students: students
+    };
+
+    currentBatchData = students;
+    displayBatchResults(batchData);
+  };
+  reader.readAsText(file);
 }
 
 // Render Batch Analytics and Table
@@ -757,7 +1106,7 @@ function displayBatchResults(data) {
       <td class="py-3 px-3 font-mono">${st.internal_marks.toFixed(1)}</td>
       <td class="py-3 px-3 font-mono">${st.previous_marks.toFixed(1)}</td>
       <td class="py-3 px-4 text-right font-mono font-bold text-sm ${st.predicted_score >= 80 ? 'text-emerald-400' : st.predicted_score >= 60 ? 'text-indigo-300' : 'text-rose-400'}">
-        ${st.predicted_score.toFixed(1)}
+        ${st.predicted_score.toFixed(2)}
       </td>
       <td class="py-3 px-3 text-center">
         <span class="px-2 py-0.5 rounded text-[11px] font-extrabold border ${gradeColor}">

@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduPredict AI • Student Performance ML Prediction System</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              900: '#312e81',
+            },
+            surface: {
+              800: '#131b2e',
+              900: '#0b0f19',
+              950: '#070a12',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="./static/css/style.css">
+</head>
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- Ambient Glow Effects -->
+  <div class="fixed top-0 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+  <div class="fixed bottom-10 right-10 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+  <!-- Top Navigation Header -->
+  <header class="sticky top-0 z-50 border-b border-slate-800/80 bg-[#0b0f19]/80 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <i data-lucide="graduation-cap" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-indigo-200 bg-clip-text text-transparent">
+              EduPredict AI
+            </span>
+            <span class="px-2 py-0.5 text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full">
+              ML v1.0
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400">Random Forest Student Grade Prediction System</p>
+        </div>
+      </div>
+
+      <!-- Center Status Badge -->
+      <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-800 text-xs">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span class="text-slate-300 font-medium">Model Online</span>
+        <span class="text-slate-600">•</span>
+        <span class="text-slate-400">100 Trees</span>
+        <span class="text-slate-600">•</span>
+        <span class="text-indigo-400 font-mono text-[11px]">5 Features</span>
+      </div>
+
+      <!-- Right Action Presets / Actions -->
+      <div class="flex items-center gap-3">
+        <button id="quickSampleBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-xs font-medium text-slate-300 transition-colors">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span>Quick Preset</span>
+        </button>
+        <a href="./static/sample_students.csv" download="sample_students.csv" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-xs font-medium text-indigo-300 transition-colors">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Sample CSV</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-800/50 flex space-x-1 sm:space-x-4 overflow-x-auto">
+      <button onclick="switchTab('single')" id="tab-single" class="tab-button tab-active flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-indigo-500 text-white transition-all">
+        <i data-lucide="calculator" class="w-4 h-4 text-indigo-400"></i>
+        <span>Individual Predictor</span>
+      </button>
+      <button onclick="switchTab('whatif')" id="tab-whatif" class="tab-button flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-all">
+        <i data-lucide="sliders" class="w-4 h-4 text-purple-400"></i>
+        <span>What-If Simulator</span>
+      </button>
+      <button onclick="switchTab('batch')" id="tab-batch" class="tab-button flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-all">
+        <i data-lucide="users" class="w-4 h-4 text-emerald-400"></i>
+        <span>Cohort Batch Analysis</span>
+      </button>
+      <button onclick="switchTab('model')" id="tab-model" class="tab-button flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-all">
+        <i data-lucide="cpu" class="w-4 h-4 text-amber-400"></i>
+        <span>Model & API Inspector</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+
+    <!-- ========================================== -->
+    <!-- TAB 1: INDIVIDUAL PREDICTOR -->
+    <!-- ========================================== -->
+    <div id="content-single" class="tab-content block">
+      
+      <!-- Preset Bar -->
+      <div class="mb-6 flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl glass-panel">
+        <div class="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <i data-lucide="bookmark" class="w-4 h-4 text-indigo-400"></i>
+          <span>Student Archetypes:</span>
+        </div>
+        <div class="flex flex-wrap gap-2" id="presetPillsContainer">
+          <!-- Filled dynamically via JS -->
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        
+        <!-- Left: Input Controls (5 cols) -->
+        <div class="lg:col-span-5 space-y-6">
+          <div class="glass-panel p-6 rounded-2xl relative overflow-hidden">
+            <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
+              <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+                  <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h2 class="text-base font-semibold text-white">Student Input Parameters</h2>
+                  <p class="text-xs text-slate-400">Real-time ML feature adjustments</p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <label class="relative inline-flex items-center cursor-pointer" title="Auto calculate when inputs change">
+                  <input type="checkbox" id="autoPredictToggle" class="sr-only peer" checked>
+                  <div class="w-8 h-4 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <span class="ml-2 text-[11px] font-medium text-slate-400">Instant</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- 5 Features Form -->
+            <form id="predictionForm" class="space-y-5">
+              
+              <!-- Feature 1: Internal Marks -->
+              <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-indigo-500/40 transition-colors">
+                <div class="flex justify-between items-center mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+                    <label for="num_internal_marks" class="text-xs font-semibold text-slate-200">Internal marks</label>
+                    <span class="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-500/20 text-indigo-300 rounded border border-indigo-500/30">
+                      44.9% Weight (Top Impact)
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <input type="number" id="num_internal_marks" min="0" max="100" step="0.5" value="75.0" class="w-16 px-2 py-1 text-right text-sm font-semibold font-mono bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
+                    <span class="text-xs text-slate-400">/100</span>
+                  </div>
+                </div>
+                <input type="range" id="range_internal_marks" min="0" max="100" step="0.5" value="75.0" class="accent-indigo-500">
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                  <span>0 (Fail)</span>
+                  <span>50 (Pass Threshold)</span>
+                  <span>100 (Max)</span>
+                </div>
+              </div>
+
+              <!-- Feature 2: Assignment Score -->
+              <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-indigo-500/40 transition-colors">
+                <div class="flex justify-between items-center mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-violet-400"></span>
+                    <label for="num_assignment_score" class="text-xs font-semibold text-slate-200">Assignment score</label>
+                    <span class="px-1.5 py-0.5 text-[9px] font-bold bg-violet-500/20 text-violet-300 rounded border border-violet-500/30">
+                      28.7% Weight
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <input type="number" id="num_assignment_score" min="0" max="100" step="0.5" value="80.0" class="w-16 px-2 py-1 text-right text-sm font-semibold font-mono bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
+                    <span class="text-xs text-slate-400">/100</span>
+                  </div>
+                </div>
+                <input type="range" id="range_assignment_score" min="0" max="100" step="0.5" value="80.0" class="accent-violet-500">
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                  <span>0 (Incomplete)</span>
+                  <span>70 (Target)</span>
+                  <span>100 (Flawless)</span>
+                </div>
+              </div>
+
+              <!-- Feature 3: Study hours per day -->
+              <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-indigo-500/40 transition-colors">
+                <div class="flex justify-between items-center mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <label for="num_study_hours" class="text-xs font-semibold text-slate-200">Study hours per day</label>
+                    <span class="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
+                      12.8% Weight
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <input type="number" id="num_study_hours" min="0" max="16" step="0.1" value="5.0" class="w-16 px-2 py-1 text-right text-sm font-semibold font-mono bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
+                    <span class="text-xs text-slate-400">hrs</span>
+                  </div>
+                </div>
+                <input type="range" id="range_study_hours" min="0" max="14" step="0.1" value="5.0" class="accent-emerald-500">
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                  <span>0 hrs</span>
+                  <span>4.6 hrs (Cohort Avg)</span>
+                  <span>14 hrs (Intense)</span>
+                </div>
+              </div>
+
+              <!-- Feature 4: Previous exam marks -->
+              <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-indigo-500/40 transition-colors">
+                <div class="flex justify-between items-center mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                    <label for="num_previous_marks" class="text-xs font-semibold text-slate-200">Previous exam marks</label>
+                    <span class="px-1.5 py-0.5 text-[9px] font-bold bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/30">
+                      7.5% Weight
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <input type="number" id="num_previous_marks" min="0" max="100" step="0.5" value="78.0" class="w-16 px-2 py-1 text-right text-sm font-semibold font-mono bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
+                    <span class="text-xs text-slate-400">/100</span>
+                  </div>
+                </div>
+                <input type="range" id="range_previous_marks" min="0" max="100" step="0.5" value="78.0" class="accent-cyan-500">
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                  <span>0 (Historical Low)</span>
+                  <span>68 (Cohort Avg)</span>
+                  <span>100 (Max)</span>
+                </div>
+              </div>
+
+              <!-- Feature 5: Attendance percentage -->
+              <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-indigo-500/40 transition-colors">
+                <div class="flex justify-between items-center mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <label for="num_attendance" class="text-xs font-semibold text-slate-200">Attendance percentage</label>
+                    <span class="px-1.5 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-300 rounded border border-amber-500/30">
+                      6.0% Weight • 75% Cutoff
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <input type="number" id="num_attendance" min="0" max="100" step="0.5" value="85.0" class="w-16 px-2 py-1 text-right text-sm font-semibold font-mono bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
+                    <span class="text-xs text-slate-400">%</span>
+                  </div>
+                </div>
+                <input type="range" id="range_attendance" min="0" max="100" step="0.5" value="85.0" class="accent-amber-500">
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                  <span>0%</span>
+                  <span class="text-amber-400 font-semibold">75% (Eligibility Threshold)</span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="flex gap-3 pt-2">
+                <button type="submit" id="predictBtn" class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 font-semibold text-sm text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                  <i data-lucide="zap" class="w-4 h-4"></i>
+                  <span>Predict Performance</span>
+                </button>
+                <button type="button" id="resetInputsBtn" class="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 font-semibold text-sm text-slate-300 flex items-center justify-center transition-colors">
+                  <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+
+        <!-- Right: Prediction Results & Insights Dashboard (7 cols) -->
+        <div class="lg:col-span-7 space-y-6">
+          
+          <!-- Hero Prediction Card -->
+          <div class="glass-panel p-6 sm:p-8 rounded-2xl relative overflow-hidden">
+            <!-- Background Glow -->
+            <div id="resultGlowBg" class="absolute -right-16 -top-16 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl"></div>
+
+            <div class="relative z-10">
+              <div class="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-800">
+                <div>
+                  <span class="text-xs font-semibold uppercase tracking-wider text-indigo-400">Model Evaluation</span>
+                  <h3 class="text-xl font-bold text-white mt-0.5 tracking-tight">PREDICTION RESULT</h3>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span id="badgeGrade" class="px-3.5 py-1 text-sm font-extrabold rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    Grade B
+                  </span>
+                  <span id="badgeStatus" class="px-3 py-1 text-xs font-semibold rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Good Performance (Above Average)
+                  </span>
+                </div>
+              </div>
+
+              <!-- Main Visual Score & Metrics Grid -->
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-6 my-6 items-center">
+                
+                <!-- Circular Score Ring & Large Number -->
+                <div class="sm:col-span-6 flex flex-col items-center justify-center p-4 rounded-xl bg-slate-900/40 border border-slate-800/80">
+                  <div class="relative w-40 h-40 flex items-center justify-center">
+                    <svg class="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
+                      <!-- Background circle -->
+                      <circle cx="60" cy="60" r="50" stroke="#1e293b" stroke-width="10" fill="transparent"/>
+                      <!-- Progress bar circle -->
+                      <circle id="scoreProgressCircle" cx="60" cy="60" r="50" stroke="#6366f1" stroke-width="10" stroke-dasharray="314.159" stroke-dashoffset="75" stroke-linecap="round" fill="transparent" class="transition-all duration-700 ease-out"/>
+                    </svg>
+                    <div class="absolute flex flex-col items-center">
+                      <span id="predictedScoreVal" class="text-4xl font-extrabold font-mono tracking-tight text-white">75.28</span>
+                      <span class="text-[11px] font-medium text-slate-400">OUT OF 100</span>
+                    </div>
+                  </div>
+                  <p class="text-xs text-indigo-300 mt-2 font-bold text-center">Predicted Final Marks</p>
+                  <p id="performanceCategorySubtitle" class="text-[11px] text-slate-400 font-medium text-center mt-0.5">Good Performance (Above Average)</p>
+                </div>
+
+                <!-- Sub-metrics Grid -->
+                <div class="sm:col-span-6 grid grid-cols-2 gap-3">
+                  <!-- Metric 1: GPA -->
+                  <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                    <span class="text-[11px] font-medium text-slate-400 block">Est. GPA</span>
+                    <span id="predictedGpa" class="text-xl font-bold font-mono text-indigo-300 mt-0.5 block">3.0 / 4.0</span>
+                    <span class="text-[10px] text-slate-500">Standard 4-pt scale</span>
+                  </div>
+
+                  <!-- Metric 2: Uncertainty Std Dev -->
+                  <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                    <span class="text-[11px] font-medium text-slate-400 block">Model Variance</span>
+                    <span id="predictedStd" class="text-xl font-bold font-mono text-slate-200 mt-0.5 block">±1.82</span>
+                    <span class="text-[10px] text-slate-500">100 Trees Variance</span>
+                  </div>
+
+                  <!-- Metric 3: 95% Confidence Interval -->
+                  <div class="col-span-2 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                    <div class="flex justify-between items-center mb-1">
+                      <span class="text-[11px] font-medium text-slate-400">95% Confidence Interval</span>
+                      <span id="confidenceIntervalVal" class="text-xs font-mono font-bold text-slate-200">[71.7 - 78.9]</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden flex">
+                      <div class="bg-indigo-600/40 h-full w-[20%]"></div>
+                      <div class="bg-indigo-500 h-full w-[60%]"></div>
+                      <div class="bg-indigo-600/40 h-full w-[20%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-500 block mt-1">Bounded across individual tree regression ensembles</span>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- Python CLI Output Mirror -->
+              <div class="p-4 rounded-xl bg-slate-950/90 border border-slate-800 font-mono text-xs shadow-inner mb-4">
+                <div class="flex items-center justify-between text-[11px] text-slate-500 pb-2 mb-2 border-b border-slate-800/80">
+                  <span class="flex items-center gap-1.5 text-slate-400 font-sans font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    CLI Terminal Output
+                  </span>
+                  <span class="text-[10px] text-slate-500">predict_student_performance()</span>
+                </div>
+                <div class="text-slate-600">========================================</div>
+                <div class="text-indigo-400 font-bold tracking-wider">PREDICTION RESULT</div>
+                <div class="text-slate-600">========================================</div>
+                <div class="mt-1 text-slate-200">Predicted Final Marks: <span id="cliPredictedMarks" class="text-emerald-400 font-bold">75.28</span></div>
+                <div class="text-slate-200">Performance Category: <span id="cliPerformanceCategory" class="text-indigo-300 font-bold">Good Performance (Above Average)</span></div>
+                <div class="text-slate-600 mt-1">========================================</div>
+              </div>
+
+              <!-- Evaluator Assessment Message -->
+              <div id="feedbackBox" class="p-4 rounded-xl bg-indigo-950/30 border border-indigo-800/40 text-xs text-indigo-200 leading-relaxed flex items-start gap-3">
+                <i data-lucide="info" class="w-4 h-4 text-indigo-400 shrink-0 mt-0.5"></i>
+                <span id="feedbackText">Good overall standing with steady performance across core assessments.</span>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Comparative Analysis & Marginal Gains -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <!-- Radar Chart: Student Profile vs Cohort -->
+            <div class="glass-panel p-5 rounded-2xl">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                  <i data-lucide="radar" class="w-4 h-4 text-indigo-400"></i>
+                  <span>Attribute Radar</span>
+                </h4>
+                <span class="text-[10px] text-slate-400">vs. Top Performer</span>
+              </div>
+              <div class="h-56 relative flex items-center justify-center">
+                <canvas id="studentRadarChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Marginal Score Gains Simulator -->
+            <div class="glass-panel p-5 rounded-2xl">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                  <i data-lucide="trending-up" class="w-4 h-4 text-emerald-400"></i>
+                  <span>Target Improvement Gains</span>
+                </h4>
+                <span class="text-[10px] text-slate-400">Projected delta</span>
+              </div>
+              <div class="space-y-3 mt-4" id="marginalGainsList">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Personalized AI Recommendations -->
+          <div class="glass-panel p-6 rounded-2xl">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <i data-lucide="lightbulb" class="w-5 h-5 text-amber-400"></i>
+                <h3 class="text-sm font-semibold text-white">Actionable Academic Interventions</h3>
+              </div>
+              <span class="text-xs text-slate-400">Weighted guidance for maximum grade lift</span>
+            </div>
+            
+            <div id="recommendationsList" class="space-y-3">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 2: WHAT-IF SENSITIVITY SIMULATOR -->
+    <!-- ========================================== -->
+    <div id="content-whatif" class="tab-content hidden space-y-6">
+      <div class="glass-panel p-6 rounded-2xl">
+        <div class="max-w-3xl">
+          <span class="text-xs font-semibold uppercase tracking-wider text-purple-400">Interactive Sensitivity Engine</span>
+          <h2 class="text-xl font-bold text-white mt-1">What-If Analysis & Feature Sensitivity</h2>
+          <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+            See how the Random Forest model responds when varying one specific input metric across its entire theoretical spectrum while keeping all other student variables fixed at their current baseline values.
+          </p>
+        </div>
+
+        <div class="mt-6 flex flex-wrap items-center gap-3">
+          <span class="text-xs font-semibold text-slate-300">Feature to test:</span>
+          <button onclick="runWhatIf('study_hours')" class="whatif-tab px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold transition-all">
+            Daily Study Hours
+          </button>
+          <button onclick="runWhatIf('internal_marks')" class="whatif-tab px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all">
+            Internal Marks (44.9% Weight)
+          </button>
+          <button onclick="runWhatIf('assignment_score')" class="whatif-tab px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all">
+            Assignment Score (28.7% Weight)
+          </button>
+          <button onclick="runWhatIf('attendance')" class="whatif-tab px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all">
+            Attendance Rate
+          </button>
+          <button onclick="runWhatIf('previous_marks')" class="whatif-tab px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all">
+            Previous Marks
+          </button>
+        </div>
+
+        <div class="mt-6 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+          <div class="h-80 w-full relative">
+            <canvas id="whatIfChart"></canvas>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div class="p-4 rounded-xl bg-slate-900/40 border border-slate-800">
+            <span class="text-xs text-slate-400">Lowest Projected Score</span>
+            <p id="whatIfMinVal" class="text-lg font-bold font-mono text-rose-400 mt-1">--</p>
+            <span class="text-[10px] text-slate-500">At feature minimum</span>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-900/40 border border-slate-800">
+            <span class="text-xs text-slate-400">Maximum Projected Score</span>
+            <p id="whatIfMaxVal" class="text-lg font-bold font-mono text-emerald-400 mt-1">--</p>
+            <span class="text-[10px] text-slate-500">At feature ceiling</span>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-900/40 border border-slate-800">
+            <span class="text-xs text-slate-400">Total Swing / Sensitivity</span>
+            <p id="whatIfDeltaVal" class="text-lg font-bold font-mono text-indigo-400 mt-1">--</p>
+            <span class="text-[10px] text-slate-500">Potential score range</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: COHORT BATCH ANALYSIS -->
+    <!-- ========================================== -->
+    <div id="content-batch" class="tab-content hidden space-y-6">
+      
+      <!-- Upload & Quick Sample Box -->
+      <div class="glass-panel p-6 rounded-2xl">
+        <div class="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-800">
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Batch Processing</span>
+            <h2 class="text-xl font-bold text-white mt-1">Cohort Prediction & Academic Analytics</h2>
+            <p class="text-xs text-slate-400 mt-1">Upload a student CSV file or load our sample cohort to evaluate entire classes instantaneously.</p>
+          </div>
+          
+          <div class="flex items-center gap-3">
+            <button id="loadSampleBatchBtn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-semibold text-xs text-white flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition-all">
+              <i data-lucide="play" class="w-3.5 h-3.5"></i>
+              <span>Load 12-Student Sample</span>
+            </button>
+            <a href="./static/sample_students.csv" download="sample_students.csv" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 flex items-center gap-1.5 transition-colors">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Download Template</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Drag & Drop Area -->
+        <div id="dropZone" class="mt-6 border-2 border-dashed border-slate-700 hover:border-emerald-500/50 rounded-2xl p-8 text-center cursor-pointer transition-colors bg-slate-900/30">
+          <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+          <div class="mx-auto w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-3">
+            <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+          </div>
+          <h4 class="text-sm font-semibold text-white">Click or drag & drop CSV file here</h4>
+          <p class="text-xs text-slate-400 mt-1">Supports standard CSV with headers: <code class="text-indigo-300">attendance, study_hours, assignment_score, internal_marks, previous_marks</code></p>
+        </div>
+      </div>
+
+      <!-- Batch Results Section (Hidden until populated) -->
+      <div id="batchResultsSection" class="hidden space-y-6">
+        
+        <!-- Summary KPI Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div class="p-4 rounded-xl glass-panel">
+            <span class="text-[11px] text-slate-400">Total Students</span>
+            <p id="kpiTotalStudents" class="text-xl font-bold font-mono text-white mt-1">0</p>
+          </div>
+          <div class="p-4 rounded-xl glass-panel">
+            <span class="text-[11px] text-slate-400">Cohort Average</span>
+            <p id="kpiAvgScore" class="text-xl font-bold font-mono text-indigo-400 mt-1">0.0</p>
+          </div>
+          <div class="p-4 rounded-xl glass-panel">
+            <span class="text-[11px] text-slate-400">Highest Score</span>
+            <p id="kpiHighestScore" class="text-xl font-bold font-mono text-emerald-400 mt-1">0.0</p>
+          </div>
+          <div class="p-4 rounded-xl glass-panel">
+            <span class="text-[11px] text-slate-400">Lowest Score</span>
+            <p id="kpiLowestScore" class="text-xl font-bold font-mono text-rose-400 mt-1">0.0</p>
+          </div>
+          <div class="p-4 rounded-xl glass-panel">
+            <span class="text-[11px] text-slate-400">Pass Rate (>=50)</span>
+            <p id="kpiPassRate" class="text-xl font-bold font-mono text-cyan-400 mt-1">0%</p>
+          </div>
+          <div class="p-4 rounded-xl glass-panel">
+            <span class="text-[11px] text-slate-400">At-Risk Count</span>
+            <p id="kpiAtRiskCount" class="text-xl font-bold font-mono text-amber-400 mt-1">0</p>
+          </div>
+        </div>
+
+        <!-- Grade Distribution Chart & Table Header -->
+        <div class="glass-panel p-6 rounded-2xl">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 class="text-base font-bold text-white">Cohort Prediction Roster</h3>
+              <p class="text-xs text-slate-400">Click headers to sort or use the search bar</p>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <div class="relative">
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                <input type="text" id="rosterSearch" placeholder="Search by name or ID..." class="pl-9 pr-4 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 w-56">
+              </div>
+
+              <button id="exportCsvBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition-colors">
+                <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-400"></i>
+                <span>Export CSV</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-900/70 border-b border-slate-800 text-slate-400 uppercase font-semibold">
+                <tr>
+                  <th class="py-3 px-4">Student</th>
+                  <th class="py-3 px-3">Attendance</th>
+                  <th class="py-3 px-3">Study Hrs</th>
+                  <th class="py-3 px-3">Assignments</th>
+                  <th class="py-3 px-3">Internals</th>
+                  <th class="py-3 px-3">Previous</th>
+                  <th class="py-3 px-4 text-right">Predicted Score</th>
+                  <th class="py-3 px-3 text-center">Grade</th>
+                  <th class="py-3 px-3">Status</th>
+                </tr>
+              </thead>
+              <tbody id="batchTableBody" class="divide-y divide-slate-800/60">
+                <!-- Rows injected via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 4: MODEL TRANSPARENCY & API -->
+    <!-- ========================================== -->
+    <div id="content-model" class="tab-content hidden space-y-6">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Model Architecture & Parameters (7 cols) -->
+        <div class="lg:col-span-7 glass-panel p-6 rounded-2xl space-y-6">
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-amber-400">Model Architecture</span>
+            <h2 class="text-xl font-bold text-white mt-1">Random Forest Regressor Architecture</h2>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              This machine learning model predicts student final performance by constructing an ensemble of 100 de-correlated decision trees trained with bootstrap aggregating (bagging) and feature subsampling.
+            </p>
+          </div>
+
+          <!-- Specs Table -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span class="text-slate-500 block">Ensemble Estimators</span>
+              <span class="text-sm font-bold font-mono text-white mt-1 block">100 Trees</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span class="text-slate-500 block">Split Criterion</span>
+              <span class="text-sm font-bold font-mono text-white mt-1 block">Squared Error</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span class="text-slate-500 block">Total Features</span>
+              <span class="text-sm font-bold font-mono text-white mt-1 block">5 Features</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span class="text-slate-500 block">Output Format</span>
+              <span class="text-sm font-bold font-mono text-emerald-400 mt-1 block">Continuous [0-100]</span>
+            </div>
+          </div>
+
+          <!-- Feature Importance Chart -->
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-300">Gini / Impurity Feature Importances</h3>
+              <span class="text-[10px] text-slate-500">Derived directly from scikit-learn tree nodes</span>
+            </div>
+            <div class="h-60 relative">
+              <canvas id="featureImportanceChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- REST API Developer Playground (5 cols) -->
+        <div class="lg:col-span-5 glass-panel p-6 rounded-2xl space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-indigo-400">Developer API</span>
+              <h3 class="text-base font-bold text-white mt-0.5">REST API Playground</h3>
+            </div>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              POST /api/predict
+            </span>
+          </div>
+
+          <p class="text-xs text-slate-400">
+            Integrate this ML prediction system into any external mobile app, campus portal, or LMS via standard JSON requests.
+          </p>
+
+          <!-- Curl command block -->
+          <div>
+            <div class="flex justify-between items-center text-[10px] text-slate-400 mb-1">
+              <span>cURL Request:</span>
+              <button onclick="copyCurlCode()" class="text-indigo-400 hover:text-indigo-300">Copy</button>
+            </div>
+            <pre class="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-300 code-font overflow-x-auto whitespace-pre">curl -X POST http://localhost:5000/api/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "attendance": 85.0,
+    "study_hours": 5.0,
+    "assignment_score": 80.0,
+    "internal_marks": 75.0,
+    "previous_marks": 78.0
+  }'</pre>
+          </div>
+
+          <!-- Live Response JSON -->
+          <div>
+            <span class="text-[10px] text-slate-400 block mb-1">Sample Response Payload:</span>
+            <pre id="apiSampleResponse" class="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-emerald-400 code-font overflow-x-auto max-h-56"></pre>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800/80 bg-[#0b0f19] py-6 text-center text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+        <span>EduPredict AI Engine • Powered by Random Forest Regressor & scikit-learn</span>
+      </div>
+      <div class="flex items-center gap-4 text-[11px]">
+        <span>Model Precision: R² ~ 0.94</span>
+        <span>•</span>
+        <span>Local Port: 5000</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- App JavaScript -->
+  <script src="./static/js/app.js"></script>
+</body>
+</html>
